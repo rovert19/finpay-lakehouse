@@ -1,5 +1,6 @@
 
-import json 
+import json
+import re 
 from pyspark.sql.types import StructType, StructField, StringType, DecimalType, DateType
 
 VOLUME = '/Volumes/fintech_finpay/default/vol_landing'
@@ -56,3 +57,13 @@ def get_schemas():
     'merchants': MERCHANT_SCHEMA,
     'transactions': TRANSACTION_SCHEMA
   }
+
+  if re.match(r"^.*\..*,.*$", texto)
+
+  def number_correction(amount):
+    if re.fullmatch(r".*.,..*", amount):
+      return (
+          amount.replace('.', '')
+              .replace(',', '.')
+      )
+    return amount
