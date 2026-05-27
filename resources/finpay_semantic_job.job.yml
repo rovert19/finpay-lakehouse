@@ -6,6 +6,6 @@ resources:
         - task_key: refresh_semantic_model
           sql_task:
             file:
-              path: "../notebooks/02_refresh_semantic_model.sql"
+              path: "../notebooks/02_refresh_materialized_views.sql"
               source: WORKSPACE
-            warehouse_id: ${resources.warehouses.finpay_sql_warehouse.id}
+            warehouse_id: ${resources.sql_warehouses.finpay_sql_warehouse.id}

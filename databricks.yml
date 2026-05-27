@@ -24,7 +24,7 @@ variables:
 resources:
   sql_warehouses:
     finpay_sql_warehouse:
-      cluster_size: X-SMALL
+      cluster_size: X-Small
       enable_serverless_compute: true
       max_num_clusters: 1
       min_num_clusters: 1
