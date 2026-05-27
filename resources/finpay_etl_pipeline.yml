@@ -1,0 +1,26 @@
+resources:
+  pipelines:
+    pipeline_finpay_etl_pipeline:
+      name: finpay_etl_pipeline
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      root_path: ../src
+
+      clusters:
+        - label: dlt_job_cluster
+          node_type_id: Standard_DS3_v2
+          policy_id: ${var.policy_id}
+          num_workers: 1
+
+      libraries:
+        - glob:
+            include: ../src/bronze.py
+        - glob:
+            include: ../src/silver.py
+        - glob:
+            include: ../src/gold.py
+
+      event_log:
+        name: event_log_finpay_etl
+        schema: ${var.schema_observability}
+        catalog: ${var.catalog}

@@ -5,12 +5,45 @@
 bundle:
   name: finpay-lakehouse
 
+include:
+  - resources/*.yml
+  - resources/*/*.yml
+
+variables:
+  catalog:
+    description: The catalog to use
+  schema:
+    description: The schema to use
+  schema_observability:
+    description: The schema to use for observability
+  pause_status:
+    description: The pause status for jobs
+  policy_id:
+    description: The policy id to use for clusters
+
+resources:
+  sql_warehouses:
+    finpay_sql_warehouse:
+      cluster_size: X-SMALL
+      enable_serverless_compute: true
+      max_num_clusters: 1
+      min_num_clusters: 1
+      auto_stop_mins: 5
+      warehouse_type: PRO
+
+
 targets:
   dev:
     mode: development
     default: true
     workspace:
       host: https://adb-7405606119450421.1.azuredatabricks.net
+    variables:
+      catalog: fintech_finpay
+      schema: default
+      schema_observability: observability
+      pause_status: PAUSED
+      policy_id: 0018EC0AD3E8445A
 
   ## Optionally, there could be 'staging' or 'prod' targets here.
   #

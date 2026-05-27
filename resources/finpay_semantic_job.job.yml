@@ -1,0 +1,11 @@
+resources:
+  jobs:
+    finpay_semantic_job:
+      name: finpay_semantic_job
+      tasks:
+        - task_key: refresh_semantic_model
+          sql_task:
+            file:
+              path: "../notebooks/02_refresh_semantic_model.sql"
+              source: WORKSPACE
+            warehouse_id: ${resources.warehouses.finpay_sql_warehouse.id}
