@@ -26,7 +26,7 @@ def load_source(source_name):
                 .option('multiline', metadata['multiline'])
                 .load(metadata['source_path'])
                 .withColumn('ingestion_at', F.current_timestamp())
-                .withColumn('source_file', F.lit("_metadata.file_name"))
+                .withColumn('source_file', F.col("_metadata.file_name"))
         )
 
 
