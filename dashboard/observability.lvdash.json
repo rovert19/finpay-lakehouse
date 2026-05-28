@@ -1,0 +1,806 @@
+{
+  "datasets": [
+    {
+      "name": "2deff3a6",
+      "displayName": "details_processing",
+      "queryLines": [
+        "WITH details_processing_rn as (\r\n",
+        "    SELECT \r\n",
+        "        origin.pipeline_name,\r\n",
+        "        origin.flow_name,\r\n",
+        "        details,\r\n",
+        "        timestamp,\r\n",
+        "        row_number() OVER (PARTITION BY origin.flow_name, CAST(timestamp as date) ORDER BY timestamp DESC) as rn --select *\r\n",
+        "    FROM fintech_finpay.observability.event_log_finpay_etl\r\n",
+        "    WHERE event_type = 'flow_progress'\r\n",
+        "        AND details:flow_progress:status= 'RUNNING'\r\n",
+        "        AND origin.pipeline_name = 'finpay_etl_pipeline'\r\n",
+        "        --AND origin.flow_name like 'fintech_finpay.silver.%'\r\n",
+        "        AND origin.flow_name <> 'fintech_finpay.silver.quarantine'\r\n",
+        "        AND message like 'Completed %'\r\n",
+        "),\r\n",
+        "unnested_processing_metrics as (\r\n",
+        "\r\n",
+        "SELECT\r\n",
+        "    CAST(timestamp as date) as processing_date,\r\n",
+        "    pipeline_name,\r\n",
+        "    trim(trailing ']' from substring_index(details:flow_progress:metrics:source_metrics[0]:source_name, '[', -1)) as source_table,\r\n",
+        "    split(flow_name, '\\\\.', 3)[1] as layer,\r\n",
+        "    flow_name as sink_table,\r\n",
+        "    CAST(CASE\r\n",
+        "        WHEN flow_name like 'fintech_finpay.silver.%' THEN details:flow_progress:metrics.num_upserted_rows\r\n",
+        "        ELSE details:flow_progress:metrics.num_output_rows\r\n",
+        "    END as INT) as upserted_rows,\r\n",
+        "    CAST(details:flow_progress:data_quality.warned_records as INT) as rejected_rows\r\n",
+        "FROM details_processing_rn\r\n",
+        "WHERE rn = 1\r\n",
+        ")\r\n",
+        "\r\n",
+        "SELECT\r\n",
+        "    processing_date,\r\n",
+        "    pipeline_name,\r\n",
+        "    source_table,\r\n",
+        "    layer,\r\n",
+        "    sink_table,\r\n",
+        "    upserted_rows,\r\n",
+        "    rejected_rows,\r\n",
+        "    CAST(rejected_rows/ (upserted_rows + rejected_rows) * 100 as decimal(5,2)) as rate_rejected\r\n",
+        "FROM unnested_processing_metrics"
+      ],
+      "catalog": "fintech_finpay",
+      "schema": "default"
+    },
+    {
+      "name": "f48b386e",
+      "displayName": "failed_expectations",
+      "queryLines": [
+        "WITH details_processing_silver_rn as (\r\n",
+        "    SELECT \r\n",
+        "        origin.pipeline_name,\r\n",
+        "        origin.flow_name,\r\n",
+        "        details,\r\n",
+        "        timestamp,\r\n",
+        "        row_number() OVER (PARTITION BY origin.flow_name, CAST(timestamp as date) ORDER BY timestamp DESC) as rn --select *\r\n",
+        "    FROM fintech_finpay.observability.event_log_finpay_etl\r\n",
+        "    WHERE event_type = 'flow_progress'\r\n",
+        "        AND details:flow_progress:status= 'RUNNING'\r\n",
+        "        AND origin.pipeline_name = 'finpay_etl_pipeline'\r\n",
+        "        AND origin.flow_name like 'fintech_finpay.silver.%'\r\n",
+        "        AND origin.flow_name <> 'fintech_finpay.silver.quarantine'\r\n",
+        "        AND message like 'Completed %'\r\n",
+        "),\r\n",
+        "explode_expectations as (\r\n",
+        "    SELECT\r\n",
+        "        CAST(timestamp as date) as processing_date,\r\n",
+        "        pipeline_name,\r\n",
+        "        trim(trailing ']' from substring_index(details:flow_progress:metrics:source_metrics[0]:source_name, '[', -1)) as source_table,\r\n",
+        "        split(flow_name, '\\\\.', 3)[1] as layer,\r\n",
+        "        flow_name as sink_table,\r\n",
+        "        explode(from_json(get_json_object(details, '$.flow_progress.data_quality.expectations'), 'ARRAY<STRUCT<name: STRING, failed_records: INT>>')) as expectations,\r\n",
+        "        CAST(details:flow_progress:data_quality.warned_records as INT) as total_rejected\r\n",
+        "    FROM details_processing_silver_rn\r\n",
+        "    WHERE rn = 1\r\n",
+        ")\r\n",
+        "SELECT\r\n",
+        "    processing_date,\r\n",
+        "    pipeline_name,\r\n",
+        "    layer,\r\n",
+        "    sink_table,\r\n",
+        "    expectations.name as expectation,\r\n",
+        "    CAST(expectations.failed_records as INT) as rejected_records,\r\n",
+        "    CAST((CAST(expectations.failed_records as INT) / total_rejected) as decimal(3,2)) as rate_rejected\r\n",
+        "FROM explode_expectations"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "05808c1f",
+      "displayName": "Principal",
+      "layout": [
+        {
+          "widget": {
+            "name": "32bb017b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2deff3a6",
+                  "fields": [
+                    {
+                      "name": "pipeline_name",
+                      "expression": "`pipeline_name`"
+                    },
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "sink_table",
+                      "expression": "`sink_table`"
+                    },
+                    {
+                      "name": "upserted_rows",
+                      "expression": "`upserted_rows`"
+                    },
+                    {
+                      "name": "rejected_rows",
+                      "expression": "`rejected_rows`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": false
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "pipeline_name",
+                    "displayName": "Procesado por"
+                  },
+                  {
+                    "fieldName": "layer",
+                    "displayName": "Capa"
+                  },
+                  {
+                    "fieldName": "sink_table",
+                    "displayName": "Tabla"
+                  },
+                  {
+                    "fieldName": "upserted_rows",
+                    "displayName": "Insertados"
+                  },
+                  {
+                    "fieldName": "rejected_rows",
+                    "displayName": "Descartados"
+                  }
+                ]
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "dark": "#05223B"
+              },
+              "widgetBorderColor": {
+                "dark": "#315F83"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro-de-capa",
+            "queries": [
+              {
+                "name": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a3b8b061447a144791913e9ea08_layer",
+                "query": {
+                  "datasetName": "2deff3a6",
+                  "fields": [
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "layer_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "bronze"
+                      }
+                    ]
+                  }
+                }
+              },
+              "disallowAll": true,
+              "frame": {
+                "showTitle": true,
+                "title": "Filtro de Capa"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "layer",
+                    "queryName": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a3b8b061447a144791913e9ea08_layer"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro-de-fecha",
+            "queries": [
+              {
+                "name": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a3b8b061447a144791913e9ea08_processing_date",
+                "query": {
+                  "datasetName": "2deff3a6",
+                  "fields": [
+                    {
+                      "name": "processing_date",
+                      "expression": "`processing_date`"
+                    },
+                    {
+                      "name": "processing_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Filtro de Fecha"
+              },
+              "widgetType": "filter-date-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "processing_date",
+                    "queryName": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a3b8b061447a144791913e9ea08_processing_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "9cc40532",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2deff3a6",
+                  "fields": [
+                    {
+                      "name": "sink_table",
+                      "expression": "`sink_table`"
+                    },
+                    {
+                      "name": "sum(rate_rejected)",
+                      "expression": "SUM(`rate_rejected`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sink_table",
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "displayName": "Tabla",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(rate_rejected)",
+                  "format": {
+                    "type": "number-plain",
+                    "abbreviation": "compact",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  },
+                  "displayName": "Porcentaje de rechazados",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "dark": "#05223B"
+              },
+              "widgetBorderColor": {
+                "dark": "#315F83"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "b98d82b9",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "5acdae9f",
+      "displayName": "Expectations",
+      "layout": [
+        {
+          "widget": {
+            "name": "e00c4045",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "expectation",
+                      "expression": "`expectation`"
+                    },
+                    {
+                      "name": "sum(rejected_records)",
+                      "expression": "SUM(`rejected_records`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "expectation",
+                  "axis": {
+                    "labelAngle": 0
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(rejected_records)",
+                  "displayName": "Descartados",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "dark": "#05223B"
+              },
+              "widgetBorderColor": {
+                "dark": "#315F83"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 10
+          }
+        },
+        {
+          "widget": {
+            "name": "tabla",
+            "queries": [
+              {
+                "name": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_sink_table",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "sink_table",
+                      "expression": "`sink_table`"
+                    },
+                    {
+                      "name": "sink_table_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "disallowAll": true,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "STRING",
+                    "values": [
+                      {
+                        "value": "fintech_finpay.silver.transactions"
+                      }
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Tabla"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "sink_table",
+                    "queryName": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_sink_table"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "fecha",
+            "queries": [
+              {
+                "name": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_processing_date",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "processing_date",
+                      "expression": "`processing_date`"
+                    },
+                    {
+                      "name": "processing_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Fecha"
+              },
+              "disallowAll": true,
+              "selection": {
+                "defaultSelection": {
+                  "values": {
+                    "dataType": "DATE",
+                    "values": [
+                      {
+                        "value": "2026-05-27T00:00:00.000"
+                      }
+                    ]
+                  }
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "processing_date",
+                    "queryName": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_processing_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "po",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "monthly(processing_date)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `processing_date`)"
+                    },
+                    {
+                      "name": "max(rate_rejected)",
+                      "expression": "MAX(`rate_rejected`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `processing_date`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Porcentaje Mayor de rechazo",
+                "headerAlignment": "center"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "max(rate_rejected)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "monthly(processing_date)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "75e65a18",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "monthly(processing_date)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `processing_date`)"
+                    },
+                    {
+                      "name": "avg(rate_rejected)",
+                      "expression": "AVG(`rate_rejected`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `processing_date`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "showDescription": false,
+                "title": "Porcentae Promedio de rechazo"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(rate_rejected)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 2
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "monthly(processing_date)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 6,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "96084368",
+      "displayName": "Tendencia",
+      "layout": [
+        {
+          "widget": {
+            "name": "61e1e5d5",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "processing_date",
+                      "expression": "`processing_date`"
+                    },
+                    {
+                      "name": "sum(rejected_records)",
+                      "expression": "SUM(`rejected_records`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "processing_date",
+                  "format": {
+                    "type": "date",
+                    "date": "locale-short-month"
+                  },
+                  "axis": {
+                    "hideTitle": true
+                  },
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(rejected_records)",
+                  "displayName": "Rechazados",
+                  "scale": {
+                    "type": "quantitative",
+                    "domain": {
+                      "min": 0
+                    }
+                  }
+                }
+              }
+            },
+            "specExtensions": {
+              "widgetBackgroundColor": {
+                "dark": "#05223B"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "filtro-de-tabla",
+            "queries": [
+              {
+                "name": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_sink_table",
+                "query": {
+                  "datasetName": "f48b386e",
+                  "fields": [
+                    {
+                      "name": "sink_table",
+                      "expression": "`sink_table`"
+                    },
+                    {
+                      "name": "sink_table_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Por Tabla"
+              },
+              "disallowAll": false,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "sink_table",
+                    "queryName": "dashboards/01f15a291ee1108d91faed7a2513d577/datasets/01f15a4051a110d5a791958d735518a0_sink_table"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
