@@ -48,6 +48,14 @@ targets:
 
   ## Optionally, there could be 'staging' or 'prod' targets here.
   #
-  # prod:
-  #   workspace:
-  #     host: https://adb-7405606119450421.1.azuredatabricks.net
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-7405612461223581.1.azuredatabricks.net/
+      root_path: /Workspace/Users/eduardo.roberto.rd@gmail.com/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: fintech_finpay
+      schema: default
+      schema_observability: observability
+      pause_status: UNPAUSED
+      policy_id: 000A79C7050D05EA

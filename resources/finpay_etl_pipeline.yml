@@ -8,7 +8,6 @@ resources:
 
       clusters:
         - label: default
-          node_type_id: Standard_DS3_v2
           policy_id: ${var.policy_id}
           num_workers: 1
 
